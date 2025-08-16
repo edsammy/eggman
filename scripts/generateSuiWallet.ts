@@ -1,6 +1,10 @@
 // save in .env
 // import into sui cli:
 // sui keytool import [private_key] ed25519
+// fund with sui: https://faucet.sui.io
+// then swap sui for WAL
+// walrus get-wal
+
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 const keyPair = new Ed25519Keypair();
