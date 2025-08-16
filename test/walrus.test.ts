@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { getEstimateSuiCost } from '../src/lib/walrus/index.ts';
+import { getEstimateSuiCost } from '../src/lib/walrus';
 
 describe('getEstimateSuiCost', () => {
   it('should return a cost estimate for small file', async () => {

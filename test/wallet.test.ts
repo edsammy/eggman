@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { getWalletAddress, getWalletBalance } from '../src/lib/walrus/index.ts';
+import { getWalletAddress, getWalletBalance } from '../src/lib/sui';
 
 test('wallet address matches SUI_ADDRESS env var', async () => {
   const walletAddress = await getWalletAddress();
