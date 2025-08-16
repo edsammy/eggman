@@ -2,10 +2,21 @@
   "name": "eggman",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "bun test"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.37.2",
+    "@mysten/walrus": "^0.6.2",
+    "hono": "^4.9.2",
+    "viem": "^2.33.3"
   }
 }
