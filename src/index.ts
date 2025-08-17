@@ -7,10 +7,22 @@ import { getBlob, storeFile } from './lib/walrus.js';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { serveStatic } from "hono/bun";
-import { readdir, stat } from 'fs/promises';
+import { readdir, stat, mkdir } from 'fs/promises';
 import { addBlobToUser } from "./lib/base.js";
+import { existsSync } from 'fs';
 
 const app = new Hono();
+
+// Ensure tmp directory exists
+const tmpDir = process.env.TMP_DIR || join(process.cwd(), 'tmp');
+if (!existsSync(tmpDir)) {
+  try {
+    await mkdir(tmpDir, { recursive: true });
+    console.log('Created tmp directory:', tmpDir);
+  } catch (error) {
+    console.error('Failed to create tmp directory:', error);
+  }
+}
 
 // Enable CORS for all routes
 app.use('*', cors({
@@ -184,7 +196,7 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
     const uniqueId = randomUUID().slice(0,7);
     console.log(`file: ${uniqueId}`)
     const tempFileName = `${uniqueId}:${walletAddress}.${fileExtension}`;
-    const tempFilePath = join(process.cwd(), 'tmp', tempFileName);
+    const tempFilePath = join(tmpDir, tempFileName);
     
     // Write to temp file as backup using Bun.write
     await Bun.write(tempFilePath, blob);
@@ -238,14 +250,13 @@ app.get('/admin', async c => {
 
 // Serve static files from tmp folder
 app.get('/images/*', serveStatic({
-  root: './tmp',
+  root: tmpDir,
   rewriteRequestPath: (path) => path.replace('/images', '')
 }));
 
 // API route to list all images in tmp folder with metadata
 app.get('/images', async c => {
   try {
-    const tmpDir = join(process.cwd(), 'tmp');
     const files = await readdir(tmpDir);
     
     // Filter for image files and get metadata
@@ -274,9 +285,17 @@ app.get('/images', async c => {
       images: imageFiles
     });
   } catch (error) {
-    console.error(error)
-    return c.json({ error: 'Failed to list images' }, 500);
+    console.error('Error listing images:', error);
     
+    // If it's a directory not found error, return empty list
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      return c.json({
+        total: 0,
+        images: []
+      });
+    }
+    
+    return c.json({ error: 'Failed to list images' }, 500);
   }
 });
 
