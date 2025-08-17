@@ -10,6 +10,7 @@ import { serveStatic } from "hono/bun";
 import { readdir, stat, mkdir } from 'fs/promises';
 import { addBlobToUser } from "./lib/base.js";
 import { existsSync } from 'fs';
+import { mintNFT, MintConfig } from '../scripts/mint.js';
 
 const app = new Hono();
 
@@ -205,16 +206,45 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
       // Attempt Walrus upload
       const blobId = await storeFile(blob);
       
-      // const existingBlobs = addressToBlob.get(walletAddress) || [];
-      // existingBlobs.push(blobId.blobId);
-      // addressToBlob.set(walletAddress, existingBlobs);
-      // await addBlobToUser(walletAddress, blobId.blobId);
-      return c.json({
-        ...blobId,
-        tempFile: tempFileName,
-        walletAddress,
-        message: 'File stored on Walrus and saved to temp folder'
-      });
+      // Mint NFT after successful upload
+      try {
+        const mintConfig: MintConfig = {
+          contractAddress: '0xE6DF4dD9a2ad8b0DC780f999C6D727383E180Fd3',
+          privateKey: process.env.EVM_PRIVATE_KEY as `0x${string}`,
+          rpcUrl: process.env.RPC_URL_BASE_CHAIN || 'https://sepolia.base.org'
+        };
+        
+        const mintResult = await mintNFT(walletAddress, mintConfig);
+        
+        if (mintResult.transactionHash) {
+          console.log(`✅ Minted NFT transaction ${mintResult.transactionHash} for ${walletAddress}`);
+          return c.json({
+            ...blobId,
+            tempFile: tempFileName,
+            walletAddress,
+            mintTransactionHash: mintResult.transactionHash,
+            message: 'File stored on Walrus and NFT mint transaction submitted'
+          });
+        } else {
+          console.error(`❌ NFT mint failed for ${walletAddress}:`, mintResult.error);
+          return c.json({
+            ...blobId,
+            tempFile: tempFileName,
+            walletAddress,
+            nftError: mintResult.error,
+            message: 'File stored on Walrus but NFT minting failed'
+          });
+        }
+      } catch (mintError) {
+        console.error('❌ NFT mint error:', mintError);
+        return c.json({
+          ...blobId,
+          tempFile: tempFileName,
+          walletAddress,
+          nftError: 'NFT minting process failed',
+          message: 'File stored on Walrus but NFT minting failed'
+        });
+      }
     } catch (walrusError) {
       return c.json({
         tempFile: tempFileName,
