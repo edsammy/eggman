@@ -11,13 +11,21 @@ export async function getStorageCost(size: number, epochs: number) {
 	return estimate;
 };
 
-export async function storeFile() {
-  const file = Bun.file('./test/IMG_9048.jpeg');
-  const arrayBuffer = await file.arrayBuffer();
-  const blob = new Uint8Array(arrayBuffer);
+export async function storeFile(blob?: Uint8Array) {
+  let fileBlob: Uint8Array;
+  
+  if (blob) {
+    fileBlob = blob;
+  } else {
+    // Fallback to default file for testing
+    const file = Bun.file('./test/IMG_9048.jpeg');
+    const arrayBuffer = await file.arrayBuffer();
+    fileBlob = new Uint8Array(arrayBuffer);
+  }
+  
   const epochs = 1;
   const { blobId, blobObject } = await walrusClient.writeBlob({
-  	blob,
+  	blob: fileBlob,
   	deletable: false,
   	epochs,
   	signer: suiWallet,
