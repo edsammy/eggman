@@ -10,13 +10,11 @@ export const suiClient = new SuiClient({
 	url: getFullnodeUrl('testnet'),
 });
 
-export async function getWalletAddress () {
+export async function getWalletAddress() {
 	return suiWallet.getPublicKey().toSuiAddress();
 }
 
-export async function getWalletBalance (address: string) {
-	const balance = await suiClient.getAllBalances({
-		owner: address,
-	});
+export async function getWalletBalance(owner: string) {
+	const balance = await suiClient.getAllBalances({ owner });
 	return balance;
 }
