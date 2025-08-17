@@ -3,11 +3,12 @@ import { cors } from 'hono/cors';
 import { timeout } from 'hono/timeout';
 import { Address } from 'viem';
 import { paymentMiddleware } from 'x402-hono';
-import { storeFile } from './lib/walrus.js';
+import { getBlob, storeFile } from './lib/walrus.js';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { serveStatic } from "hono/bun";
 import { readdir, stat } from 'fs/promises';
+import { addBlobToUser } from "./lib/base.js";
 
 const app = new Hono();
 
@@ -22,26 +23,7 @@ app.use('*', cors({
 }));
 const DEFAULT_RECEIVING_ADDRESS = process.env.EVM_ADDRESS as Address;
 
-// Store for payment transactions with detailed info (in production, use Redis or database)
-interface TransactionData {
-  transactionString: string;
-  fileName?: string;
-  blobId?: string;
-  blobObjectId?: string;
-  used: boolean;
-  createdAt: Date;
-  usedAt?: Date;
-}
-
-const validTransactions = new Map<string, TransactionData>();
-
-// Add default ADMIN transaction for testing
-const ADMIN_TRANSACTION = 'ADMIN_TEST_TRANSACTION';
-validTransactions.set(ADMIN_TRANSACTION, {
-  transactionString: ADMIN_TRANSACTION,
-  used: false,
-  createdAt: new Date(),
-});
+const addressToBlob = new Map<string, string[]>();
 
 // Payment endpoint - returns x402 payment transaction string
 app.use('/pay', paymentMiddleware(
@@ -68,32 +50,21 @@ app.get('/hello', c => {
 app.get('/pay', async c => {
   try {
     // Extract transaction hash from x402 payment headers
-    const transactionHash = c.req.header('X-PAYMENT');
+    const payment = c.req.header('X-PAYMENT');
     // console.dir(c.req, { depth: null});
 
-    if (!transactionHash) {
+    if (!payment) {
       return c.json({ error: 'No transaction hash provided' }, 400);
     }
-
+    if (payment) {
+      const paymentData = JSON.parse(Buffer.from(payment, 'base64').toString());
+      console.log(paymentData)
+      const payerAddress = paymentData.payload.authorization.from;
+      console.log('Payment received from:', payerAddress);
+    }
     // In a real implementation, verify the transaction on-chain
     // For now, we'll just generate a unique transaction string
     const transactionString = `tx_${randomUUID()}_${Date.now()}`;
-
-    // Store the valid transaction with metadata
-    validTransactions.set(transactionString, {
-      transactionString,
-      used: false,
-      createdAt: new Date(),
-    });
-
-    // Set expiration (mark as expired after 10 minutes, but don't delete)
-    setTimeout(() => {
-      const transaction = validTransactions.get(transactionString);
-      if (transaction && !transaction.used) {
-        transaction.used = true; // Mark as expired
-        transaction.usedAt = new Date();
-      }
-    }, 10 * 60 * 1000);
 
     // Return response with payment completion signal
     // Include a script that will close the popup window
@@ -195,35 +166,46 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
   try {
     const body = await c.req.parseBody();
     const file = body['file'] as File;
+    const walletAddress = body['walletAddress'] as Address;
 
     if (!file) {
       return c.json({ error: 'No file provided' }, 400);
     }
-    console.log(`got file ${file.size}`)
+    
+    if (!walletAddress) {
+      return c.json({ error: 'No wallet address provided' }, 400);
+    }
+    console.log(`got file ${file.size} from wallet ${walletAddress}`)
     const arrayBuffer = await file.arrayBuffer();
     const blob = new Uint8Array(arrayBuffer);
-
+    
     // Generate unique filename with original extension
     const fileExtension = file.name.split('.').pop() || '';
     const uniqueId = randomUUID();
     const tempFileName = `${uniqueId}.${fileExtension}`;
     const tempFilePath = join(process.cwd(), 'tmp', tempFileName);
-
+    
     // Write to temp file as backup using Bun.write
     await Bun.write(tempFilePath, blob);
-
+    
     try {
       // Attempt Walrus upload
       const blobId = await storeFile(blob);
-
+      
+      // const existingBlobs = addressToBlob.get(walletAddress) || [];
+      // existingBlobs.push(blobId.blobId);
+      // addressToBlob.set(walletAddress, existingBlobs);
+      await addBlobToUser(walletAddress, blobId.blobId);
       return c.json({
         ...blobId,
         tempFile: tempFileName,
+        walletAddress,
         message: 'File stored on Walrus and saved to temp folder'
       });
     } catch (walrusError) {
       return c.json({
         tempFile: tempFileName,
+        walletAddress,
         message: 'Walrus upload failed, file saved to temp folder only',
         error: 'Walrus storage failed'
       }, 202);
@@ -234,36 +216,24 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
 });
 
 // Admin endpoint to view transaction history
-app.get('/admin/transactions', async c => {
-  const transactions = Array.from(validTransactions.entries()).map(([key, data]) => ({
-    transactionString: key,
-    fileName: data.fileName || null,
-    blobId: data.blobId || null,
-    blobObjectId: data.blobObjectId || null,
-    used: data.used,
-    createdAt: data.createdAt.toISOString(),
-    usedAt: data.usedAt?.toISOString() || null,
-  }));
-
+app.get('/admin', async c => {
   return c.json({
-    totalTransactions: transactions.length,
-    usedTransactions: transactions.filter(t => t.used).length,
-    unusedTransactions: transactions.filter(t => !t.used).length,
-    transactions
+    addressToBlobMap: Object.fromEntries(addressToBlob),
+    totalEntries: addressToBlob.size
   });
 });
 
-app.get('/info/:blobId', async c => {
-  const { blobId } = c.req.param();
-  const txnByBlobId = validTransactions.values().find(entry => entry.blobId === blobId);
-  const file = txnByBlobId ? txnByBlobId.fileName : null;
-
-  return c.json({
-    blobId,
-    fileName: file,
-    message: 'File retrieved from Walrus'
-  });
-});
+// app.get('/:blobId', async c => {
+//   const { blobId } = c.req.param();
+//   const blob = await getBlob(blobId);
+  
+//   // Set headers to display in browser instead of downloading
+//   c.header('Content-Type', 'image/jpeg'); // Adjust MIME type based on your file type
+//   c.header('Content-Disposition', 'inline'); // This tells the browser to display instead of download
+  
+//   // Return the blob data
+//   return c.body(blob);
+// });
 
 // Serve static files from tmp folder
 app.get('/images/*', serveStatic({
