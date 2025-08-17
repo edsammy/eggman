@@ -182,6 +182,7 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
     // Generate unique filename with original extension
     const fileExtension = file.name.split('.').pop() || '';
     const uniqueId = randomUUID().slice(0,7);
+    console.log(`file: ${uniqueId}`)
     const tempFileName = `${uniqueId}:${walletAddress}.${fileExtension}`;
     const tempFilePath = join(process.cwd(), 'tmp', tempFileName);
     
@@ -195,7 +196,7 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
       // const existingBlobs = addressToBlob.get(walletAddress) || [];
       // existingBlobs.push(blobId.blobId);
       // addressToBlob.set(walletAddress, existingBlobs);
-      await addBlobToUser(walletAddress, blobId.blobId);
+      // await addBlobToUser(walletAddress, blobId.blobId);
       return c.json({
         ...blobId,
         tempFile: tempFileName,
