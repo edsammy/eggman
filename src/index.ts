@@ -223,6 +223,7 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
             tempFile: tempFileName,
             walletAddress,
             mintTransactionHash: mintResult.transactionHash,
+            mintTransactionUrl: `https://sepolia.basescan.org/tx/${mintResult.transactionHash}`,
             message: 'File stored on Walrus and NFT mint transaction submitted'
           });
         } else {
