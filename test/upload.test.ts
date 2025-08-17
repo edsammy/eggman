@@ -16,7 +16,7 @@ async function testUpload() {
     console.log("🚀 Testing file upload...");
 
     // Make request to /store endpoint
-    const response = await fetch("https://eggman.up.railway.app/store", {
+    const response = await fetch("http://localhost:3005/store", {
       method: "POST",
       body: formData,
     });

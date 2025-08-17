@@ -5,6 +5,7 @@ import { paymentMiddleware } from 'x402-hono';
 import { storeFile } from './lib/walrus.js';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import { serveStatic } from 'hono/bun';
 
 const app = new Hono();
 const DEFAULT_RECEIVING_ADDRESS = process.env.EVM_ADDRESS as Address;
@@ -184,12 +185,12 @@ app.get('/admin/transactions', async c => {
   });
 });
 
-app.get('/get/:blobId', async c => {
+app.get('/info/:blobId', async c => {
   const { blobId } = c.req.param();
   const txnByBlobId = validTransactions.values().find(entry => entry.blobId === blobId);
   const file = txnByBlobId ? txnByBlobId.fileName : null;
 
-  c.json({
+  return c.json({
     blobId,
     fileName: file,
     message: 'File retrieved from Walrus'
