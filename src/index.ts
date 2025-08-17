@@ -1,13 +1,23 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { timeout } from 'hono/timeout';
 import { Address } from 'viem';
 import { paymentMiddleware } from 'x402-hono';
 import { storeFile } from './lib/walrus.js';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { serveStatic } from 'hono/bun';
 
 const app = new Hono();
+
+// Enable CORS for all routes
+app.use('*', cors({
+  origin: '*', // Allow all origins for demo
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-PAYMENT'],
+  exposeHeaders: ['Location'],
+  maxAge: 86400,
+  credentials: true,
+}));
 const DEFAULT_RECEIVING_ADDRESS = process.env.EVM_ADDRESS as Address;
 
 // Store for payment transactions with detailed info (in production, use Redis or database)
@@ -83,11 +93,96 @@ app.get('/pay', async c => {
       }
     }, 10 * 60 * 1000);
 
-    return c.json({
-      transactionString,
-      message: 'Payment confirmed. Use this transaction string to upload your file.',
-      expiresIn: '10 minutes'
-    });
+    // Return response with payment completion signal
+    // Include a script that will close the popup window
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payment Complete</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+          }
+          .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+          }
+          .checkmark {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: scale 0.5s ease-in-out;
+          }
+          @keyframes scale {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+          }
+          .message {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+          }
+          .sub-message {
+            opacity: 0.9;
+            margin-bottom: 1rem;
+          }
+          .close-button {
+            margin-top: 1rem;
+            padding: 0.75rem 2rem;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 0.5rem;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+          }
+          .close-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.7);
+            transform: scale(1.05);
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="checkmark">✅</div>
+          <div class="message">Payment Complete!</div>
+          <div class="sub-message">Transaction: ${transactionString.substring(0, 20)}...</div>
+          <div class="sub-message">This window will close automatically in 3 seconds...</div>
+          <button class="close-button" onclick="window.close()">Close Window</button>
+        </div>
+        <script>
+          // Signal to parent window that payment is complete
+          if (window.opener) {
+            window.opener.postMessage({ 
+              type: 'PAYMENT_COMPLETE', 
+              transactionString: '${transactionString}',
+              success: true 
+            }, '*');
+          }
+          
+          // Auto-close window after 3 seconds
+          setTimeout(() => {
+            window.close();
+          }, 3000);
+        </script>
+      </body>
+      </html>
+    `;
+    
+    return c.html(html);
   } catch (error) {
     return c.json({ error: 'Payment processing failed' }, 500);
   }
@@ -98,30 +193,11 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
   try {
     const body = await c.req.parseBody();
     const file = body['file'] as File;
-    const transactionString = body['transactionString'] as string;
 
     if (!file) {
       return c.json({ error: 'No file provided' }, 400);
     }
-
-    if (!transactionString) {
-      return c.json({ error: 'No transaction string provided. Please pay first using /pay endpoint.' }, 400);
-    }
-
-    // Verify transaction string is valid and not used
-    const transaction = validTransactions.get(transactionString);
-    if (!transaction) {
-      return c.json({ error: 'Invalid transaction string. Please pay first.' }, 401);
-    }
-
-    if (transaction.used) {
-      return c.json({ error: 'Transaction string already used or expired. Please pay again.' }, 401);
-    }
-
-    // Mark transaction as used (but don't delete)
-    transaction.used = true;
-    transaction.usedAt = new Date();
-
+    console.log(`got file ${file.size}`)
     const arrayBuffer = await file.arrayBuffer();
     const blob = new Uint8Array(arrayBuffer);
 
@@ -138,26 +214,16 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
       // Attempt Walrus upload
       const blobId = await storeFile(blob);
 
-      // Update transaction with file details
-      transaction.fileName = tempFileName;
-      transaction.blobId = blobId.blobId;
-      transaction.blobObjectId = blobId.blobObjectId;
-
       return c.json({
         ...blobId,
         tempFile: tempFileName,
-        message: 'File stored on Walrus and saved to temp folder',
-        transactionUsed: transactionString
+        message: 'File stored on Walrus and saved to temp folder'
       });
     } catch (walrusError) {
-      // If Walrus fails, still update transaction with temp file info
-      transaction.fileName = tempFileName;
-
       return c.json({
         tempFile: tempFileName,
         message: 'Walrus upload failed, file saved to temp folder only',
-        error: 'Walrus storage failed',
-        transactionUsed: transactionString
+        error: 'Walrus storage failed'
       }, 202);
     }
   } catch (error) {
