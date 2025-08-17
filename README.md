@@ -2,8 +2,9 @@
 
 ## Tech stack:
 * hono
-* walrus
-* x402
+* x402 payments
+* @mysten/walrus
+* @mysten/sui
 
 ---
 

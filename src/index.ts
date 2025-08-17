@@ -72,7 +72,7 @@ app.get('/pay', async c => {
       used: false,
       createdAt: new Date(),
     });
-    
+
     // Set expiration (mark as expired after 10 minutes, but don't delete)
     setTimeout(() => {
       const transaction = validTransactions.get(transactionString);
@@ -112,11 +112,11 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
     if (!transaction) {
       return c.json({ error: 'Invalid transaction string. Please pay first.' }, 401);
     }
-    
+
     if (transaction.used) {
       return c.json({ error: 'Transaction string already used or expired. Please pay again.' }, 401);
     }
-    
+
     // Mark transaction as used (but don't delete)
     transaction.used = true;
     transaction.usedAt = new Date();
@@ -136,14 +136,14 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
     try {
       // Attempt Walrus upload
       const blobId = await storeFile(blob);
-      
+
       // Update transaction with file details
       transaction.fileName = tempFileName;
       transaction.blobId = blobId.blobId;
       transaction.blobObjectId = blobId.blobObjectId;
-      
-      return c.json({ 
-        ...blobId, 
+
+      return c.json({
+        ...blobId,
         tempFile: tempFileName,
         message: 'File stored on Walrus and saved to temp folder',
         transactionUsed: transactionString
@@ -151,8 +151,8 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
     } catch (walrusError) {
       // If Walrus fails, still update transaction with temp file info
       transaction.fileName = tempFileName;
-      
-      return c.json({ 
+
+      return c.json({
         tempFile: tempFileName,
         message: 'Walrus upload failed, file saved to temp folder only',
         error: 'Walrus storage failed',
@@ -175,12 +175,24 @@ app.get('/admin/transactions', async c => {
     createdAt: data.createdAt.toISOString(),
     usedAt: data.usedAt?.toISOString() || null,
   }));
-  
+
   return c.json({
     totalTransactions: transactions.length,
     usedTransactions: transactions.filter(t => t.used).length,
     unusedTransactions: transactions.filter(t => !t.used).length,
     transactions
+  });
+});
+
+app.get('/get/:blobId', async c => {
+  const { blobId } = c.req.param();
+  const txnByBlobId = validTransactions.values().find(entry => entry.blobId === blobId);
+  const file = txnByBlobId ? txnByBlobId.fileName : null;
+
+  c.json({
+    blobId,
+    fileName: file,
+    message: 'File retrieved from Walrus'
   });
 });
 

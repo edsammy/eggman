@@ -16,7 +16,7 @@ async function testUpload() {
     console.log("🚀 Testing file upload...");
 
     // Make request to /store endpoint
-    const response = await app.request("/store", {
+    const response = await fetch("https://eggman.up.railway.app/store", {
       method: "POST",
       body: formData,
     });
@@ -52,16 +52,16 @@ async function testUpload() {
 async function testAdminEndpoint() {
   try {
     console.log("\n🔍 Testing admin transactions endpoint...");
-    
+
     const response = await app.request("/admin/transactions", {
       method: "GET",
     });
-    
+
     console.log(`📊 Admin response status: ${response.status}`);
-    
+
     const responseData = await response.json();
     console.log("📋 Transaction data:", JSON.stringify(responseData, null, 2));
-    
+
     if (response.status === 200) {
       console.log("✅ Admin endpoint test successful!");
       console.log(`📈 Total transactions: ${responseData.totalTransactions}`);
