@@ -181,8 +181,8 @@ app.post('/store', timeout(5 * 60 * 1000), async c => {
     
     // Generate unique filename with original extension
     const fileExtension = file.name.split('.').pop() || '';
-    const uniqueId = randomUUID();
-    const tempFileName = `${uniqueId}.${fileExtension}`;
+    const uniqueId = randomUUID().slice(0,7);
+    const tempFileName = `${uniqueId}:${walletAddress}.${fileExtension}`;
     const tempFilePath = join(process.cwd(), 'tmp', tempFileName);
     
     // Write to temp file as backup using Bun.write
@@ -256,6 +256,7 @@ app.get('/images', async c => {
           const stats = await stat(filePath);
           return {
             filename: file,
+            owner: file.split(':')?.[1]?.split('.')?.[0] || file,
             url: `/images/${file}`,
             size: stats.size,
             createdAt: stats.birthtime,
@@ -265,14 +266,16 @@ app.get('/images', async c => {
     );
     
     // Sort by creation date (newest first)
-    imageFiles.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    imageFiles.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
     
     return c.json({
       total: imageFiles.length,
       images: imageFiles
     });
   } catch (error) {
+    console.error(error)
     return c.json({ error: 'Failed to list images' }, 500);
+    
   }
 });
 
