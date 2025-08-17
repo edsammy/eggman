@@ -6,6 +6,8 @@ import { paymentMiddleware } from 'x402-hono';
 import { storeFile } from './lib/walrus.js';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import { serveStatic } from "hono/bun";
+import { readdir, stat } from 'fs/promises';
 
 const app = new Hono();
 
@@ -261,6 +263,47 @@ app.get('/info/:blobId', async c => {
     fileName: file,
     message: 'File retrieved from Walrus'
   });
+});
+
+// Serve static files from tmp folder
+app.get('/images/*', serveStatic({
+  root: './tmp',
+  rewriteRequestPath: (path) => path.replace('/images', '')
+}));
+
+// API route to list all images in tmp folder with metadata
+app.get('/images', async c => {
+  try {
+    const tmpDir = join(process.cwd(), 'tmp');
+    const files = await readdir(tmpDir);
+    
+    // Filter for image files and get metadata
+    const imageFiles = await Promise.all(
+      files
+        .filter(file => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file))
+        .map(async (file) => {
+          const filePath = join(tmpDir, file);
+          const stats = await stat(filePath);
+          return {
+            filename: file,
+            url: `/images/${file}`,
+            size: stats.size,
+            createdAt: stats.birthtime,
+            modifiedAt: stats.mtime
+          };
+        })
+    );
+    
+    // Sort by creation date (newest first)
+    imageFiles.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    return c.json({
+      total: imageFiles.length,
+      images: imageFiles
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to list images' }, 500);
+  }
 });
 
 export default app;
